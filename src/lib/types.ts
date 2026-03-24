@@ -30,6 +30,8 @@ export interface Expense {
   start_year: number;
   duration_months: number | null;
   is_active: boolean;
+  end_month: number | null;
+  end_year: number | null;
   created_at: string;
 }
 
@@ -82,9 +84,15 @@ export function isExpenseInMonth(expense: Expense, month: number, year: number):
   const targetAbs = year * 12 + month;
   const startAbs = expense.start_year * 12 + expense.start_month;
 
+  // Check end date (first month where expense no longer appears)
+  if (expense.end_month != null && expense.end_year != null) {
+    const endAbs = expense.end_year * 12 + expense.end_month;
+    if (targetAbs >= endAbs) return false;
+  }
+
   switch (expense.type) {
     case 'fixed':
-      return expense.is_active && startAbs <= targetAbs;
+      return startAbs <= targetAbs;
     case 'installment':
       return startAbs <= targetAbs &&
         (startAbs + (expense.duration_months ?? 0) - 1) >= targetAbs;

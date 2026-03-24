@@ -13,7 +13,9 @@ const pool = new Pool({
   idleTimeoutMillis: 10_000,
   connectionTimeoutMillis: 10_000,
   ...(isProduction && {
-    ssl: { rejectUnauthorized: false },
+    ssl: process.env.SUPABASE_CA_CERT
+      ? { ca: process.env.SUPABASE_CA_CERT, rejectUnauthorized: true }
+      : { rejectUnauthorized: false },
   }),
 });
 

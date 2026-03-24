@@ -114,7 +114,12 @@ export default function Home() {
     };
 
     if (editingExpense) {
-      await updateExpense(editingExpense.id, data);
+      // Fixed expenses: versioned edit (close old, create new from current month)
+      if (editingExpense.type === 'fixed') {
+        await updateExpense(editingExpense.id, data, month, year);
+      } else {
+        await updateExpense(editingExpense.id, data);
+      }
     } else {
       await createExpense(data);
     }
@@ -131,7 +136,7 @@ export default function Home() {
   };
 
   const handleDeactivateExpense = async (id: number) => {
-    await deactivateExpense(id);
+    await deactivateExpense(id, month, year);
     const expenses = await getAllExpenses();
     setAllExpenses(expenses);
   };

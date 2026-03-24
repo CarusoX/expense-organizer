@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import pool from '../../../lib/db';
-import { createExpenseSchema, updateExpenseSchema, deleteExpenseSchema } from '../../../lib/validation';
+import { createExpenseSchema, updateExpenseSchema, deleteExpenseSchema, deactivateExpenseSchema } from '../../../lib/validation';
 
 function parseRow(row: Record<string, unknown>) {
   return { ...row, amount: Number(row.amount) };
@@ -38,7 +38,8 @@ export async function POST(req: NextRequest) {
 
 const ALLOWED_UPDATE_FIELDS = new Set([
   'name', 'description', 'amount', 'currency_id', 'category_id',
-  'credit_card_id', 'type', 'start_month', 'start_year', 'duration_months', 'is_active',
+  'credit_card_id', 'type', 'start_month', 'start_year', 'duration_months',
+  'is_active', 'end_month', 'end_year',
 ]);
 
 export async function PUT(req: NextRequest) {
@@ -49,7 +50,67 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
     }
 
-    const { id, ...rawUpdates } = parsed.data;
+    const { id, from_month, from_year, ...rawUpdates } = parsed.data;
+
+    // Versioned edit for fixed expenses: close old, create new from this month
+    if (from_month && from_year) {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+
+        // Get the current expense
+        const { rows: [oldExpense] } = await client.query(
+          'SELECT * FROM expenses WHERE id = $1',
+          [id],
+        );
+        if (!oldExpense) {
+          await client.query('ROLLBACK');
+          return NextResponse.json({ error: 'Expense not found' }, { status: 404 });
+        }
+
+        // Close the old expense at this month
+        await client.query(
+          'UPDATE expenses SET end_month = $2, end_year = $3 WHERE id = $1',
+          [id, from_month, from_year],
+        );
+
+        // Build the new expense with updated fields
+        const newData = {
+          name: rawUpdates.name ?? oldExpense.name,
+          description: rawUpdates.description ?? oldExpense.description,
+          amount: rawUpdates.amount ?? oldExpense.amount,
+          currency_id: rawUpdates.currency_id ?? oldExpense.currency_id,
+          category_id: rawUpdates.category_id !== undefined ? rawUpdates.category_id : oldExpense.category_id,
+          credit_card_id: rawUpdates.credit_card_id !== undefined ? rawUpdates.credit_card_id : oldExpense.credit_card_id,
+          type: rawUpdates.type ?? oldExpense.type,
+          start_month: from_month,
+          start_year: from_year,
+          duration_months: rawUpdates.duration_months !== undefined ? rawUpdates.duration_months : oldExpense.duration_months,
+        };
+
+        const { rows: [newExpense] } = await client.query(
+          `INSERT INTO expenses (name, description, amount, currency_id, category_id, credit_card_id, type, start_month, start_year, duration_months)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
+          [newData.name, newData.description, newData.amount, newData.currency_id, newData.category_id, newData.credit_card_id, newData.type, newData.start_month, newData.start_year, newData.duration_months],
+        );
+
+        // Migrate payment record for this month from old to new expense
+        await client.query(
+          'UPDATE expense_payments SET expense_id = $1 WHERE expense_id = $2 AND month = $3 AND year = $4',
+          [newExpense.id, id, from_month, from_year],
+        );
+
+        await client.query('COMMIT');
+        return NextResponse.json(parseRow(newExpense));
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
+    }
+
+    // Regular in-place update (non-fixed expenses, or deactivation)
     const entries = Object.entries(rawUpdates).filter(
       ([k, v]) => ALLOWED_UPDATE_FIELDS.has(k) && v !== undefined,
     );

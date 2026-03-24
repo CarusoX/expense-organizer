@@ -133,10 +133,19 @@ export async function createExpense(expense: {
   });
 }
 
-export async function updateExpense(id: number, updates: Partial<Expense>): Promise<Expense> {
+export async function updateExpense(
+  id: number,
+  updates: Partial<Expense>,
+  fromMonth?: number,
+  fromYear?: number,
+): Promise<Expense> {
   return api('/api/expenses', {
     method: 'PUT',
-    body: JSON.stringify({ id, ...updates }),
+    body: JSON.stringify({
+      id,
+      ...updates,
+      ...(fromMonth && fromYear ? { from_month: fromMonth, from_year: fromYear } : {}),
+    }),
   });
 }
 
@@ -147,10 +156,10 @@ export async function deleteExpense(id: number): Promise<void> {
   });
 }
 
-export async function deactivateExpense(id: number): Promise<void> {
+export async function deactivateExpense(id: number, month: number, year: number): Promise<void> {
   await api('/api/expenses', {
     method: 'PUT',
-    body: JSON.stringify({ id, is_active: false }),
+    body: JSON.stringify({ id, end_month: month, end_year: year }),
   });
 }
 

@@ -61,6 +61,17 @@ export const updateExpenseSchema = z.object({
   start_year: year.optional(),
   duration_months: z.number().int().min(1).max(360).nullable().optional(),
   is_active: z.boolean().optional(),
+  end_month: month.nullable().optional(),
+  end_year: year.nullable().optional(),
+  // When provided, edit creates a new version from this month (fixed expenses only)
+  from_month: month.optional(),
+  from_year: year.optional(),
+});
+
+export const deactivateExpenseSchema = z.object({
+  id,
+  month,
+  year,
 });
 
 export const deleteExpenseSchema = z.object({ id });
