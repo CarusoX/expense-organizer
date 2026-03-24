@@ -8,12 +8,12 @@ const isProduction = process.env.NODE_ENV === 'production';
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  max: 10,
-  idleTimeoutMillis: 30_000,
-  connectionTimeoutMillis: 5_000,
-  statement_timeout: 10_000,
+  // Vercel serverless: keep pool small since each function gets its own
+  max: isProduction ? 3 : 10,
+  idleTimeoutMillis: 10_000,
+  connectionTimeoutMillis: 10_000,
   ...(isProduction && {
-    ssl: { rejectUnauthorized: true },
+    ssl: { rejectUnauthorized: false },
   }),
 });
 
