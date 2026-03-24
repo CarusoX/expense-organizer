@@ -271,6 +271,8 @@ export default function Home() {
         <ExpenseTable
           expenses={monthExpenses}
           payments={payments}
+          categories={categories}
+          creditCards={creditCards}
           onTogglePayment={handleTogglePayment}
           onEdit={handleEditExpense}
           onDelete={handleDeleteExpense}
