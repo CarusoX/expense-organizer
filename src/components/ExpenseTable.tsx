@@ -250,7 +250,7 @@ export default function ExpenseTable({
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-gray-50 border-b border-gray-200">
-              <th className="px-4 py-3 text-left w-12 cursor-pointer select-none" onClick={() => toggleSort('paid')}>
+              <th className="px-4 py-3 text-left w-16 whitespace-nowrap cursor-pointer select-none" onClick={() => toggleSort('paid')}>
                 Paid<SortIcon field="paid" />
               </th>
               <th className="px-4 py-3 text-left cursor-pointer select-none" onClick={() => toggleSort('name')}>
