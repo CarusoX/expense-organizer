@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import type { ExpenseWithDetails, ExpensePayment, Category, CreditCard } from '../lib/types';
 import { formatCurrency } from '../lib/types';
 
@@ -28,6 +28,13 @@ interface ExpenseTableProps {
 }
 
 const EMPTY_FILTERS: Filters = { search: '', category: '', card: '', type: '', paid: '', currency: '' };
+const TABLE_STORAGE_KEY = 'expense-organizer-table';
+
+function loadSavedTableState(): Record<string, unknown> {
+  if (typeof window === 'undefined') return {};
+  try { return JSON.parse(localStorage.getItem(TABLE_STORAGE_KEY) ?? '{}'); }
+  catch { return {}; }
+}
 
 export default function ExpenseTable({
   expenses,
@@ -39,11 +46,19 @@ export default function ExpenseTable({
   onDelete,
   onDeactivate,
 }: ExpenseTableProps) {
+  const [saved] = useState(loadSavedTableState);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
-  const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
-  const [sortField, setSortField] = useState<SortField>('name');
-  const [sortDir, setSortDir] = useState<SortDir>('asc');
-  const [showFilters, setShowFilters] = useState(false);
+  const [filters, setFilters] = useState<Filters>({ ...EMPTY_FILTERS, ...(saved.filters as Partial<Filters> | undefined) });
+  const [sortField, setSortField] = useState<SortField>((saved.sortField as SortField) ?? 'name');
+  const [sortDir, setSortDir] = useState<SortDir>((saved.sortDir as SortDir) ?? 'asc');
+  const [showFilters, setShowFilters] = useState((saved.showFilters as boolean) ?? false);
+
+  // Persist filter/sort state to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(TABLE_STORAGE_KEY, JSON.stringify({ filters, sortField, sortDir, showFilters }));
+    } catch {}
+  }, [filters, sortField, sortDir, showFilters]);
 
   const isExpensePaid = (expenseId: number): boolean => {
     const payment = payments.find(p => p.expense_id === expenseId);

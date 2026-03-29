@@ -24,9 +24,16 @@ import {
 
 export default function Home() {
   const router = useRouter();
-  const now = new Date();
-  const [month, setMonth] = useState(now.getMonth() + 1);
-  const [year, setYear] = useState(now.getFullYear());
+  const [month, setMonth] = useState(() => {
+    if (typeof window === 'undefined') return new Date().getMonth() + 1;
+    const m = parseInt(new URLSearchParams(window.location.search).get('month') || '');
+    return m >= 1 && m <= 12 ? m : new Date().getMonth() + 1;
+  });
+  const [year, setYear] = useState(() => {
+    if (typeof window === 'undefined') return new Date().getFullYear();
+    const y = parseInt(new URLSearchParams(window.location.search).get('year') || '');
+    return y >= 2000 && y <= 2100 ? y : new Date().getFullYear();
+  });
 
   const [currencies, setCurrencies] = useState<Currency[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -95,6 +102,10 @@ export default function Home() {
   const handleMonthChange = (m: number, y: number) => {
     setMonth(m);
     setYear(y);
+    const url = new URL(window.location.href);
+    url.searchParams.set('month', String(m));
+    url.searchParams.set('year', String(y));
+    window.history.replaceState({}, '', url.toString());
     loadMonthData(m, y);
   };
 
