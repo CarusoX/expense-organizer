@@ -115,6 +115,13 @@ export default function Home() {
     setPayments(pays);
   };
 
+  const handleToggleCardPayment = async (cardId: number, isPaid: boolean) => {
+    const cardExpenses = monthExpenses.filter(e => e.credit_card_id === cardId);
+    await Promise.all(cardExpenses.map(e => togglePayment(e.id, month, year, isPaid)));
+    const pays = await getPaymentsForMonth(month, year);
+    setPayments(pays);
+  };
+
   const handleSaveExpense = async (form: ExpenseFormData) => {
     const data = {
       name: form.name.trim(),
@@ -289,6 +296,7 @@ export default function Home() {
               categories={categories}
               creditCards={creditCards}
               onTogglePayment={handleTogglePayment}
+              onToggleCardPayment={handleToggleCardPayment}
               onEdit={handleEditExpense}
               onDelete={handleDeleteExpense}
               onDeactivate={handleDeactivateExpense}

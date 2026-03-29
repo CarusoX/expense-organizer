@@ -22,6 +22,7 @@ interface ExpenseTableProps {
   categories: Category[];
   creditCards: CreditCard[];
   onTogglePayment: (expenseId: number, isPaid: boolean) => Promise<void>;
+  onToggleCardPayment: (cardId: number, isPaid: boolean) => Promise<void>;
   onEdit: (expense: ExpenseWithDetails) => void;
   onDelete: (expenseId: number) => Promise<void>;
   onDeactivate: (expenseId: number) => Promise<void>;
@@ -42,6 +43,7 @@ export default function ExpenseTable({
   categories,
   creditCards,
   onTogglePayment,
+  onToggleCardPayment,
   onEdit,
   onDelete,
   onDeactivate,
@@ -160,6 +162,25 @@ export default function ExpenseTable({
     return [...map.entries()];
   }, [expenses]);
 
+  // Group expenses by credit card for bulk payment toggles
+  const cardPaymentGroups = useMemo(() => {
+    const groups = new Map<number, { cardName: string; expenseIds: number[] }>();
+    for (const e of expenses) {
+      if (e.credit_card_id == null) continue;
+      if (!groups.has(e.credit_card_id)) {
+        groups.set(e.credit_card_id, { cardName: e.credit_card?.name ?? 'Unknown', expenseIds: [] });
+      }
+      groups.get(e.credit_card_id)!.expenseIds.push(e.id);
+    }
+    return [...groups.entries()].map(([cardId, { cardName, expenseIds }]) => {
+      const paidCount = expenseIds.filter(id => {
+        const payment = payments.find(p => p.expense_id === id);
+        return payment?.is_paid ?? false;
+      }).length;
+      return { cardId, cardName, total: expenseIds.length, paidCount, allPaid: paidCount === expenseIds.length };
+    });
+  }, [expenses, payments]);
+
   if (expenses.length === 0) {
     return (
       <div className="bg-white border border-gray-200 rounded-lg p-8 text-center">
@@ -257,6 +278,41 @@ export default function ExpenseTable({
               {usedCurrencies.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
             </select>
           )}
+        </div>
+      )}
+
+      {/* Card payment toggles */}
+      {cardPaymentGroups.length > 0 && (
+        <div className="px-4 py-2 border-b border-gray-100 flex items-center gap-2 flex-wrap">
+          <span className="text-xs text-gray-400 mr-1">Card payments</span>
+          {cardPaymentGroups.map(g => (
+            <button
+              key={g.cardId}
+              onClick={() => onToggleCardPayment(g.cardId, !g.allPaid)}
+              className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                g.allPaid
+                  ? 'bg-green-50 border-green-200 text-green-700 hover:bg-green-100'
+                  : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+              }`}
+              title={g.allPaid ? `Unmark all ${g.cardName} expenses` : `Mark all ${g.cardName} expenses as paid`}
+            >
+              <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
+                g.allPaid
+                  ? 'bg-green-500 border-green-500'
+                  : g.paidCount > 0
+                    ? 'border-green-400 bg-green-100'
+                    : 'border-gray-300'
+              }`}>
+                {g.allPaid && (
+                  <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+              </span>
+              {g.cardName}
+              <span className="text-[10px] text-gray-400">{g.paidCount}/{g.total}</span>
+            </button>
+          ))}
         </div>
       )}
 
