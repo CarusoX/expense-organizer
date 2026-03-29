@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import MonthNavigator from '../components/MonthNavigator';
 import BudgetManager from '../components/BudgetManager';
@@ -8,6 +8,7 @@ import ExpenseTable from '../components/ExpenseTable';
 import AddExpenseModal from '../components/AddExpenseModal';
 import SettingsPanel from '../components/SettingsPanel';
 import Summary from '../components/Summary';
+import ContentSkeleton from '../components/ContentSkeleton';
 import type {
   Currency, Category, CreditCard, Expense,
   ExpensePayment, MonthlyBudget, ExpenseWithDetails, ExpenseFormData,
@@ -34,8 +35,10 @@ export default function Home() {
   const [payments, setPayments] = useState<ExpensePayment[]>([]);
   const [budgets, setBudgets] = useState<MonthlyBudget[]>([]);
 
-  const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [monthLoading, setMonthLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const latestMonthRef = useRef({ month, year });
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingExpense, setEditingExpense] = useState<ExpenseWithDetails | null>(null);
@@ -44,59 +47,61 @@ export default function Home() {
   // Derived: expenses for the current month
   const monthExpenses = getExpensesForMonth(allExpenses, currencies, categories, creditCards, month, year);
 
-  // Load all reference data once
-  const loadReferenceData = useCallback(async () => {
+  // Load month-specific data (stale-response safe for rapid navigation)
+  const loadMonthData = useCallback(async (m: number, y: number) => {
+    latestMonthRef.current = { month: m, year: y };
+    setMonthLoading(true);
     try {
-      const [curr, cats, cards, expenses] = await Promise.all([
-        getCurrencies(),
-        getCategories(),
-        getCreditCards(),
-        getAllExpenses(),
+      const [pays, budg] = await Promise.all([
+        getPaymentsForMonth(m, y),
+        getBudgetsForMonth(m, y),
       ]);
-      setCurrencies(curr);
-      setCategories(cats);
-      setCreditCards(cards);
-      setAllExpenses(expenses);
+      if (latestMonthRef.current.month === m && latestMonthRef.current.year === y) {
+        setPayments(pays);
+        setBudgets(budg);
+        setMonthLoading(false);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load data');
+      if (latestMonthRef.current.month === m && latestMonthRef.current.year === y) {
+        setError(err instanceof Error ? err.message : 'Failed to load month data');
+        setMonthLoading(false);
+      }
     }
   }, []);
 
-  // Load month-specific data
-  const loadMonthData = useCallback(async () => {
-    try {
-      const [pays, budg] = await Promise.all([
-        getPaymentsForMonth(month, year),
-        getBudgetsForMonth(month, year),
-      ]);
-      setPayments(pays);
-      setBudgets(budg);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load month data');
-    }
-  }, [month, year]);
-
   // Initial load
   useEffect(() => {
-    setLoading(true);
-    Promise.all([loadReferenceData(), loadMonthData()]).finally(() => setLoading(false));
-  }, [loadReferenceData, loadMonthData]);
-
-  // Reload month data when month changes
-  useEffect(() => {
-    loadMonthData();
-  }, [loadMonthData]);
+    const init = async () => {
+      try {
+        const [curr, cats, cards, expenses] = await Promise.all([
+          getCurrencies(), getCategories(), getCreditCards(), getAllExpenses(),
+        ]);
+        setCurrencies(curr);
+        setCategories(cats);
+        setCreditCards(cards);
+        setAllExpenses(expenses);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load data');
+      }
+      await loadMonthData(month, year);
+      setInitialLoading(false);
+    };
+    init();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Handlers ──
 
   const handleMonthChange = (m: number, y: number) => {
     setMonth(m);
     setYear(y);
+    loadMonthData(m, y);
   };
 
   const handleTogglePayment = async (expenseId: number, isPaid: boolean) => {
     await togglePayment(expenseId, month, year, isPaid);
-    await loadMonthData();
+    const pays = await getPaymentsForMonth(month, year);
+    setPayments(pays);
   };
 
   const handleSaveExpense = async (form: ExpenseFormData) => {
@@ -148,7 +153,8 @@ export default function Home() {
 
   const handleSetBudget = async (currencyId: number, amount: number) => {
     await setBudget(currencyId, month, year, amount);
-    await loadMonthData();
+    const budg = await getBudgetsForMonth(month, year);
+    setBudgets(budg);
   };
 
   const handleAddCurrency = async (code: string, name: string, symbol: string) => {
@@ -181,14 +187,6 @@ export default function Home() {
     setCreditCards(await getCreditCards());
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50">
-        <div className="text-gray-500">Loading...</div>
-      </div>
-    );
-  }
-
   if (error) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-50">
@@ -205,6 +203,8 @@ export default function Home() {
       </div>
     );
   }
+
+  const showSkeleton = initialLoading || monthLoading;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -244,74 +244,84 @@ export default function Home() {
       <main className="max-w-6xl mx-auto px-4 py-6 space-y-4">
         <MonthNavigator month={month} year={year} onChange={handleMonthChange} />
 
-        <BudgetManager
-          currencies={currencies}
-          budgets={budgets}
-          month={month}
-          year={year}
-          onSetBudget={handleSetBudget}
-        />
+        {showSkeleton ? (
+          <ContentSkeleton />
+        ) : (
+          <>
+            <BudgetManager
+              currencies={currencies}
+              budgets={budgets}
+              month={month}
+              year={year}
+              onSetBudget={handleSetBudget}
+            />
 
-        {/* Expense List Header */}
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide">
-            Expenses ({monthExpenses.length})
-          </h3>
-          <button
-            onClick={() => { setEditingExpense(null); setShowAddModal(true); }}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            Add Expense
-          </button>
-        </div>
+            {/* Expense List Header */}
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide">
+                Expenses ({monthExpenses.length})
+              </h3>
+              <button
+                onClick={() => { setEditingExpense(null); setShowAddModal(true); }}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Add Expense
+              </button>
+            </div>
 
-        <ExpenseTable
-          expenses={monthExpenses}
-          payments={payments}
-          categories={categories}
-          creditCards={creditCards}
-          onTogglePayment={handleTogglePayment}
-          onEdit={handleEditExpense}
-          onDelete={handleDeleteExpense}
-          onDeactivate={handleDeactivateExpense}
-        />
+            <ExpenseTable
+              expenses={monthExpenses}
+              payments={payments}
+              categories={categories}
+              creditCards={creditCards}
+              onTogglePayment={handleTogglePayment}
+              onEdit={handleEditExpense}
+              onDelete={handleDeleteExpense}
+              onDeactivate={handleDeactivateExpense}
+            />
 
-        <Summary
-          currencies={currencies}
-          budgets={budgets}
-          expenses={monthExpenses}
-        />
+            <Summary
+              currencies={currencies}
+              budgets={budgets}
+              expenses={monthExpenses}
+            />
+          </>
+        )}
       </main>
 
       {/* Modals */}
-      <AddExpenseModal
-        isOpen={showAddModal}
-        onClose={() => { setShowAddModal(false); setEditingExpense(null); }}
-        onSave={handleSaveExpense}
-        currencies={currencies}
-        categories={categories}
-        creditCards={creditCards}
-        currentMonth={month}
-        currentYear={year}
-        editingExpense={editingExpense}
-      />
+      {!initialLoading && (
+        <>
+          <AddExpenseModal
+            isOpen={showAddModal}
+            onClose={() => { setShowAddModal(false); setEditingExpense(null); }}
+            onSave={handleSaveExpense}
+            currencies={currencies}
+            categories={categories}
+            creditCards={creditCards}
+            currentMonth={month}
+            currentYear={year}
+            editingExpense={editingExpense}
+          />
 
-      <SettingsPanel
-        isOpen={showSettings}
-        onClose={() => setShowSettings(false)}
-        currencies={currencies}
-        categories={categories}
-        creditCards={creditCards}
-        onAddCurrency={handleAddCurrency}
-        onDeleteCurrency={handleDeleteCurrency}
-        onAddCategory={handleAddCategory}
-        onDeleteCategory={handleDeleteCategory}
-        onAddCreditCard={handleAddCreditCard}
-        onDeleteCreditCard={handleDeleteCreditCard}
-      />
+          <SettingsPanel
+            isOpen={showSettings}
+            onClose={() => setShowSettings(false)}
+            currencies={currencies}
+            categories={categories}
+            creditCards={creditCards}
+            onAddCurrency={handleAddCurrency}
+            onDeleteCurrency={handleDeleteCurrency}
+            onAddCategory={handleAddCategory}
+            onDeleteCategory={handleDeleteCategory}
+            onAddCreditCard={handleAddCreditCard}
+            onDeleteCreditCard={handleDeleteCreditCard}
+          />
+        </>
+      )}
     </div>
   );
 }
